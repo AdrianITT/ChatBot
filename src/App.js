@@ -1,7 +1,8 @@
 import React,{useEffect, useState} from 'react';
 import {createServicioPreCotizacion, createPreCotizacion, getServicioData } from './api/Api';
-import { Widget, addResponseMessage } from 'react-chat-widget-react-18';
+import { Widget, addResponseMessage, addLinkSnippet, toggleMsgLoader  } from 'react-chat-widget-react-18';
 import 'react-chat-widget-react-18/lib/styles.css';
+import './chatbot.css';
 
 function App() {
   const [step, setStep] = React.useState(0);
@@ -21,6 +22,7 @@ function App() {
   const [servicioAEditar, setServicioAEditar] = useState(null); // puede ser un índice
   const [campoAEditar, setCampoAEditar] = useState(null);
   const [pasoExtra, setPasoExtra] = useState(null); // variable temporal para saber que luego viene la cantidad
+  const [servicios, setServicios] = useState([]); // Estado para almacenar los servicios
 
 
 
@@ -32,6 +34,20 @@ function App() {
       hasGreeted.current = true;
     }
   }, []);
+  
+  useEffect(() => {
+    const fetchServicios = async () => {
+      try {
+        const response = await getServicioData(7); // Cambia el ID según sea necesario
+        setServicios(response.data);
+        console.log("Servicios:", response.data);
+      } catch (error) {
+        console.error("Error al obtener servicios:", error);
+      }
+    };
+
+    fetchServicios();
+  },[]);
 
   const validacionNombre = (nombre) => {
     const regex = /^([A-Z][a-z]+)(\s[A-Z][a-z]+)*$/;
@@ -65,21 +81,33 @@ function App() {
     const regex = /^[0-9]{1,3}$/;
     return regex.test(cantidad);
   }
-  const mostrarResumenServicios = (servicios) => {
-    if (!servicios || servicios.length === 0) {
+  const mostrarResumenServicios = (servicio) => {
+    if (!servicio || servicio.length === 0) {
       addResponseMessage('No hay servicios agregados.');
       return;
     }
-  
-    const resumen = servicios.map((s, i) =>
+    //const serviciosTotales = [...servicio, ...nuevosServicios];
+    const resumenServicios = generarResumenServicios(servicio, servicios);
+    /*const resumen = servicio.map((s, i) =>
       `${i + 1}. Servicio #${s.numero}, Cantidad: ${s.cantidad}`
-    ).join('\n');
+    ).join('\n'); */
   
     addResponseMessage('Resumen de servicios 2:');
-    addResponseMessage(resumen);
-    addResponseMessage('Escribe "OK" para continuar:');
+    addResponseMessage(resumenServicios);
+    addResponseMessage('Procesando...');
+    setTimeout(()=>{
+      addResponseMessage('¿Qué deseas hacer ahora?\n1. Agregar más servicios\n2. Editar un servicio\n3. Eliminar un servicio\n4. Continuar con la cotización');
+    },3000);
+    //addResponseMessage('¿Deseas editar alguno? Escribe el número del servicio en la lista o "no" para continuar.');
   };
-  
+
+  function generarResumenServicios(serviciosTotales, serviciosData) {
+    return serviciosTotales.map((s, i) => {
+      const info = serviciosData.find(serv => serv.numero === s.numero);
+      const nombre = info ? info.nombreServicio : `Servicio #${s.numero}`;
+      return `${i + 1}. ${nombre}, Cantidad: ${s.cantidad}`;
+    }).join('\n');
+  }
 
   const enviarDatos = async () => {
     try {
@@ -113,14 +141,15 @@ function App() {
       // Crear los servicios asociados
       for (const servicio of formData.servicios) {
         console.log("Servicio a agregar:", servicio);
+        const servicioEncontrado = servicios.find(s => s.numero === Number(servicio.numero));
         //console.log("Servicio a agregar cantidad:", servicio.cantidad);
         //console.log("Servicio a agregar numero", servicio.numero);
         await createServicioPreCotizacion({
-          descripcion: "Sin descripción",
-          precio:0,
+          descripcion: "",
+          precio:"0",
           cantidad:    Number(servicio.cantidad)  || 0,
           preCotizacion: idPreCotizacion,
-          servicio:    Number(servicio.numero),
+          servicio:    servicioEncontrado.id,
           
         });
       }
@@ -187,6 +216,23 @@ function App() {
     
       return;
     }
+    const input = msg.trim().toLowerCase();
+
+    // ✅ Cancelar global para ciertos pasos
+    const pasosPermitidosCancelar = [9, 91, 92, 93, 94, 95];
+    if (input === 'cancelar' && pasosPermitidosCancelar.includes(step)) {
+      addResponseMessage('🚫 Proceso cancelado. ¿Quieres volver a empezar? Escribe "inicio".');
+      setStep(0);
+      return;
+    }
+
+    // ✅ Regresar al menú de acciones
+    if (input === 'regresar' && [91, 92, 93, 94, 95].includes(step)) {
+      addResponseMessage('🔙 Volviendo al menú anterior...');
+      addResponseMessage('¿Qué deseas hacer ahora?\n1. Agregar más servicios\n2. Editar un servicio\n3. Eliminar un servicio\n4. Continuar con la cotización\n\nEscribe "cancelar" para salir.');
+      setStep(9);
+      return;
+    }
     
     switch (step) {
       case 0:
@@ -205,27 +251,43 @@ function App() {
           addResponseMessage('¿Cuál es tu apellido paterno?');
           return;
         }
-        setFormData({ ...formData, apellido: msg });
+        /*setFormData({ ...formData, apellido: msg });
         addResponseMessage('¿Cuál es tu correo electrónico?');
+        setStep(2); */
+        setFormData({ ...formData, apellido: msg });
+        addResponseMessage('¿Cuál es tu número telefónico?');
         setStep(2);
         break;
       case 2:
-        if (!validacionCorreo(msg)) {
-          addResponseMessage('Por favor, ingresa un correo electrónico válido.');
-          addResponseMessage('¿Cuál es tu correo electrónico?');
-          return;
-        }
-        setFormData({ ...formData, correo: msg });
-        addResponseMessage('¿Cuál es tu número telefónico?');
-        setStep(3);
-        break;
-      case 3:
         if (!validacionTelefono(msg)) {
           addResponseMessage('Por favor, ingresa un número telefónico válido (10 dígitos).');
           addResponseMessage('¿Cuál es tu número telefónico?');
           return;
         }
         setFormData({ ...formData, telefono: msg });
+        addResponseMessage('¿Cuál es tu correo electrónico?');
+        setStep(3);
+        /*if (!validacionCorreo(msg)) {
+          addResponseMessage('Por favor, ingresa un correo electrónico válido.');
+          addResponseMessage('¿Cuál es tu correo electrónico?');
+          return;
+        }
+        setFormData({ ...formData, correo: msg });
+        addResponseMessage('¿Cuál es tu número telefónico?');
+        setStep(3); */
+        break;
+      case 3:
+        if (!validacionCorreo(msg)) {
+          addResponseMessage('Por favor, ingresa un correo electrónico válido.');
+          addResponseMessage('¿Cuál es tu correo electrónico?');
+          return;
+        }
+        /*if (!validacionTelefono(msg)) {
+          addResponseMessage('Por favor, ingresa un número telefónico válido (10 dígitos).');
+          addResponseMessage('¿Cuál es tu número telefónico?');
+          return;
+        } */
+        setFormData({ ...formData, correo: msg });
         addResponseMessage('¿Cuál es el nombre de la empresa?');
         setStep(4);
         break;
@@ -242,11 +304,11 @@ function App() {
       
           // Mostrar resumen para edición
           const resumen = `
-      1. Nombre: ${nuevoFormData.nombre}
-      2. Apellido: ${nuevoFormData.apellido}
-      3. Correo: ${nuevoFormData.correo}
-      4. Teléfono: ${nuevoFormData.telefono}
-      5. Empresa: ${nuevoFormData.empresa}
+          1. Nombre: ${nuevoFormData.nombre}
+          2. Apellido: ${nuevoFormData.apellido}
+          3. Correo: ${nuevoFormData.correo}
+          4. Teléfono: ${nuevoFormData.telefono}
+          5. Empresa: ${nuevoFormData.empresa}
           `;
           addResponseMessage('¿Deseas editar algún dato antes de enviar? Escribe el número del campo que deseas editar o "no" para continuar.');
           addResponseMessage(resumen);
@@ -262,19 +324,32 @@ function App() {
           addResponseMessage('¿Cuál es el nombre de la empresa?');
           return;
         }
+        addLinkSnippet({
+          title: 'Ver catálogo de servicios (PDF)',
+          link: '/pdf/Catalogo_de_servicios.pdf',
+          target: '_blank',
+        });
+        
         //setFormData({ ...formData, empresa: msg });
-         addResponseMessage('Ahora comenzaras a agregar los servicios');
+        addResponseMessage('Ahora se comenzara a agregar los servicios de la cotizacion');
         addResponseMessage('Escribe el número de servicio:');
-    
+        
+        
         break;
 
       case 111:
         //console.log('Campo a editar msg:', msg);
         if (msg.toLowerCase() === 'no') {
           //enviarDatos();
+          
+          addLinkSnippet({
+            title: 'Ver catálogo de servicios (PDF)',
+            link: '/pdf/Catalogo_de_servicios.pdf',
+            target: '_blank',
+          });
           //addResponseMessage('Datos enviados correctamente. ¿Deseas crear otra cotización? (sí/no)');
-          addResponseMessage('Ahora comenzaras a agregar los servicios');
-          addResponseMessage('Escribe el número de servicio:');
+          addResponseMessage('Ahora se comenzara a agregar los servicios de la cotizacion');
+          addResponseMessage('Escribe los numeros de servicio separados por comas (Ejemplo: 1,2,3):');
           setStep(7);
         } else {
           const opcion = parseInt(msg);
@@ -301,30 +376,61 @@ function App() {
       
       case 6:
         addResponseMessage('Ahora comenzaras a agregar los servicios');
-        addResponseMessage('Escribe el número de servicio:');
+        addResponseMessage('Escribe los numeros de servicio separados por comas (Ejemplo: 1,2,3):');
+        
         setStep(7);
         return;
         //break;
       case 7:
               // Entrada de varios números de servicio
-        const numeros = msg.split(',').map(num => parseInt(num.trim())).filter(n => !isNaN(n));
-        if (numeros.length === 0) {
-          addResponseMessage('Por favor, ingresa al menos un número válido separado por comas.');
+        const partes = msg.split(',').map(p => p.trim());
+        const numeros = [];
+        let hayInvalido = false;
+
+        for (let parte of partes) {
+          const numero = parseInt(parte, 10);
+          if (!/^\d+$/.test(parte) || isNaN(numero)) {
+            hayInvalido = true;
+            break;
+          }
+          numeros.push(numero);
+        }
+
+        if (hayInvalido) {
+          addResponseMessage('❌ Solo se permiten números enteros separados por coma. Intenta de nuevo.');
           return;
         }
         setServicioTemporal({ ...servicioTemporal, numeros }); // guarda varios
-        addResponseMessage('¿Cuántos necesita de cada uno? Ingresa las cantidades separadas por comas en el mismo orden.');
+        addResponseMessage('¿Cuánto necesita de cada uno? Ingresa las cantidades separadas por comas en el mismo orden.');
         console.log('Paso actual:', step);
 
         setStep(8);
         console.log('Paso actual:', step);
 
         break;
+      
       case 8:
         // Entrada de varias cantidades
-        const cantidades = msg.split(',').map(c => parseInt(c.trim())).filter(c => !isNaN(c));
+      const partesCantidades = msg.split(',').map(c => c.trim());
+        const cantidades = [];
+        let hayCantidadInvalida = false;
+
+        for (let parte of partesCantidades) {
+          const cantidad = parseInt(parte, 10);
+          if (!/^\d+$/.test(parte) || isNaN(cantidad)) {
+            hayCantidadInvalida = true;
+            break;
+          }
+          cantidades.push(cantidad);
+        }
+
+        if (hayCantidadInvalida) {
+          addResponseMessage('❌ Las cantidades deben ser números enteros positivos separados por comas. Intenta de nuevo.');
+          return;
+        }
+
         if (cantidades.length !== servicioTemporal.numeros.length) {
-          addResponseMessage('El número de cantidades no coincide con el número de servicios. Intenta de nuevo.');
+          addResponseMessage('❌ El número de cantidades no coincide con el número de servicios seleccionados. Intenta de nuevo.');
           return;
         }
 
@@ -338,55 +444,79 @@ function App() {
           servicios: [...prev.servicios, ...nuevosServicios]
         }));
         setServicioTemporal({ numeros: [] });
-        addResponseMessage('¿Quieres agregar más servicios? (sí/no)');
+        /*addResponseMessage('¿Quieres agregar más servicios? (sí/no)');
+        setStep(9); */
+        const serviciosTotales = [...formData.servicios, ...nuevosServicios];
+        const resumenServicios = generarResumenServicios(serviciosTotales, servicios);
+  
+        addResponseMessage('✅ Servicios agregados:');
+        addResponseMessage(resumenServicios);
+        addResponseMessage('Procesando...');
+        toggleMsgLoader();
+        setTimeout(() => {
+          toggleMsgLoader();
+        addResponseMessage('¿Qué deseas hacer ahora?\n1. Agregar más servicios\n2. Editar un servicio\n3. Eliminar un servicio\n4. Continuar con la cotización');
+        },3000);
         setStep(9);
         break;
-        case 9:
-          if (msg.toLowerCase() === 'sí' || msg.toLowerCase() === 'si') {
-            if (formData.servicios.length === 0) {
-              addResponseMessage('No hay servicios que editar.');
-              addResponseMessage('¿Deseas agregar nuevos servicios? (sí/no)');
-              setStep(6);
-            } else {
-              // Mostrar resumen solo si el usuario dijo "sí"
-              /*let resumenServicios = formData.servicios.map((s, i) =>
-                `${i + 1}. Servicio #${s.numero}, Cantidad: ${s.cantidad}`
-              ).join('\n');
         
-              addResponseMessage('Estos son los servicios agregados:');
-              addResponseMessage(resumenServicios);
-              addResponseMessage('¿Deseas editar alguno? Escribe el número del servicio en la lista o "no" para continuar.');
-              setStep(91); */
-            }
-          } else if (msg.toLowerCase() === 'no') {
-            // El usuario no quiere editar nada, pasa directo a enviar
-            /*addResponseMessage('¡Gracias por completar el formulario!');
-            enviarDatos();
-            setStep(999);
-            console.log('Datos finales del formulario:', formData);
-            addResponseMessage('¿Deseas crear otra cotización? (sí/no)');
-            setStep(10); */
-            let resumenServicios = formData.servicios.map((s, i) =>
-              `${i + 1}. Servicio #${s.numero}, Cantidad: ${s.cantidad}`
-            ).join('\n');
-      
-            addResponseMessage('Estos son los servicios agregados:');
-            addResponseMessage(resumenServicios);
-            addResponseMessage('¿Deseas editar alguno? Escribe el número del servicio en la lista o "no" para continuar.');
-            setStep(91);
-          } else {
-            addResponseMessage('Por favor responde con "sí" o "no".');
+        case 9:
+          switch (msg.trim()) {
+            case '1':
+              addResponseMessage('Dime qué número(s) de servicio quieres agregar.');
+              setStep(7); // Paso para seleccionar más servicios
+              break;
+            case '2':
+              const resumen = generarResumenServicios(formData.servicios, servicios);
+              addResponseMessage('Servicios actuales:');
+              addResponseMessage(resumen);
+              addResponseMessage('Escribe el número del servicio que deseas editar:');
+              setStep(91); // Paso de edición
+              break;
+            case '3':
+              const resumenDel = generarResumenServicios(formData.servicios, servicios);
+              addResponseMessage('Servicios actuales:');
+              addResponseMessage(resumenDel);
+              addResponseMessage('Escribe el número del servicio que deseas eliminar:');
+              setStep(95); // Paso de eliminación
+              break;
+            case '4':
+              const resumenFinal = generarResumenServicios(formData.servicios, servicios);
+              addResponseMessage('Resumen final de servicios:');
+              addResponseMessage(resumenFinal);
+              addResponseMessage('¿Confirmas que deseas enviar la cotización? (sí/no)');
+              setStep(10); // Paso final para confirmar y enviar
+              break;
+            default:
+              addResponseMessage('Por favor ingresa una opción válida (1, 2, 3 o 4).');
+              break;
+          }
+        break;
+
+        case 96:
+          if (msg.trim().toLowerCase() === 'cancelar') {
+            addResponseMessage('🚫 Proceso cancelado. ¿Quieres empezar de nuevo? Escribe "inicio".');
+            setStep(0);
+            return;
+          }else if (msg.trim().toLowerCase() === 'continuar') {
+            addResponseMessage('Dime qué número(s) de servicio quieres agregar.');
+            setStep(9);
+            return;
           }
           break;
-        
 
         case 91:
             if (msg.toLowerCase() === 'no') {
-            enviarDatos();
+            /*enviarDatos();
             setStep(999);
             addResponseMessage('¡Cotización enviada!');
             addResponseMessage('¿Deseas crear otra cotización? (sí/no)');
-            setStep(10);
+            setStep(10); */
+            const resumen = generarResumenServicios(formData.servicios, servicios);
+            addResponseMessage('Servicios actuales:');
+            addResponseMessage(resumen);
+            addResponseMessage('¿Deseas eliminar algún servicio? Escribe el número o "no" para continuar.');
+            setStep(10); // paso especial para eliminación
             return;
             }
 
@@ -417,6 +547,7 @@ function App() {
           }
           
           break;
+        
         case 93:
           const nuevoNumero = parseInt(msg);
           console.log('Nuevo número:', nuevoNumero);
@@ -452,7 +583,7 @@ function App() {
             setServicioAEditar(null);
             addResponseMessage('¡Servicio actualizado!1');
             mostrarResumenServicios(serviciosEditados);
-            setStep(91);
+            setStep(9);
           }
 
           break;
@@ -471,12 +602,55 @@ function App() {
           setServicioAEditar(null);
           addResponseMessage('¡Cantidad actualizada!');
           mostrarResumenServicios(serviciosActualizados);
-          setStep(91);
+          setStep(9);
 
           break;
 
+        case 95:
+          const indiceEliminar = parseInt(msg) - 1;
+          if (!isNaN(indiceEliminar) && formData.servicios[indiceEliminar]) {
+            const servicioEliminado = formData.servicios[indiceEliminar];
+            const serviciosActualizados = [...formData.servicios];
+            serviciosActualizados.splice(indiceEliminar, 1);
+
+            setFormData(prev => ({
+              ...prev,
+              servicios: serviciosActualizados
+            }));
+
+            addResponseMessage(`🗑️ Servicio #${servicioEliminado.numero} eliminado.`);
+            const resumenActualizado = generarResumenServicios(serviciosActualizados, servicios);
+            addResponseMessage('Servicios restantes:');
+            addResponseMessage(resumenActualizado);
+            addResponseMessage('Procesando...');
+            setTimeout(()=>{
+            addResponseMessage('¿Qué deseas hacer ahora?\n1. Agregar más servicios\n2. Editar un servicio\n3. Eliminar un servicio\n4. Continuar con la cotización');
+            },3000);
+            setStep(9);
+          } else {
+            addResponseMessage('Número inválido. Intenta nuevamente.');
+          }
+          break;
+
+        case 10:
+          if (msg.toLowerCase() === 'si') {
+            enviarDatos();
+            setStep(999);
+            addResponseMessage('¡Cotización enviada!');
+            addResponseMessage('¿Deseas crear otra cotización? (sí/no)');
+            setStep(11); // siguiente paso lógico del flujo
+            return;
+          }else if (msg.toLowerCase() === 'no') {
+            addResponseMessage('¡Gracias por usar nuestro servicio!');
+            addResponseMessage('¿Deseas crear otra cotización? (sí/no)');
+            setStep(11); // siguiente paso lógico del flujo
+            return;
+          }
         
-      case 10:
+          
+          break;
+        
+      case 11:
         if (msg.toLowerCase() === 'sí' || msg.toLowerCase() === 'si') {
           setFormData({
             nombre: '',

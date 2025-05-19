@@ -36,3 +36,36 @@
     transform: rotate(360deg);
   }
 }
+
+
+
+
+.rcw-widget-container {
+  width: 440px !important;
+  font-size: 16px;
+  border-radius: 12px;
+  box-shadow: 0 0 15px rgba(0,0,0,0.2);
+}
+
+/* Estilo del encabezado */
+.rcw-header {
+  background-color: #1a73e8 !important;
+  color: white !important;
+  font-size: 18px;
+}
+
+/* Mensajes */
+.rcw-message-text {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* Input de usuario */
+.rcw-input {
+  font-size: 16px;
+}
+
+/* Botón flotante */
+.rcw-launcher {
+  background-color: #1aa7e8 !important;
+}
